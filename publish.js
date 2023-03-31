@@ -146,7 +146,6 @@ const compiledModulesAndDeps = JSON.parse(
       ]
     });
 
-    tx.setGasBudget(5000000);
     tx.transferObjects([purchased_item], tx.pure(await signer.getAddress(), 'address'));
     tx.moveCall({
       target: `0x2::transfer_policy::confirm_request`,
