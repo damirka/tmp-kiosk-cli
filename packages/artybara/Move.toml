@@ -1,10 +1,12 @@
 [package]
-name = "registry"
+name = "artybara"
 version = "0.0.1"
+published-at = "5e8c0a583865bfbb46211638a11168f60cc3428811ff7195622cdbeb9c7aa1a7"
 
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "testnet" }
+Collectible = { local = "../collectible" }
 
 [addresses]
-registry =  "0x0"
+artybara =  "0x0"
 sui =  "0000000000000000000000000000000000000000000000000000000000000002"

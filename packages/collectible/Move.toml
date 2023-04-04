@@ -1,0 +1,15 @@
+[package]
+name = "Collectible"
+version = "0.0.1"
+published-at = "d35f7bf9525b4c4aa676d3c32ef53ec8ace095052e51e3db24462e0390d27383"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "testnet" }
+
+[addresses]
+sui = "0000000000000000000000000000000000000000000000000000000000000002"
+
+# the collectible itself; yay!
+collectible =  "d35f7bf9525b4c4aa676d3c32ef53ec8ace095052e51e3db24462e0390d27383"
+# the object ID for the collectible::Registry; just in case ye know
+collectible_registry = "be324773163a7b62f6e1546cabd229a4640da14a6ae4aa6d27e965b164ef6a37"
