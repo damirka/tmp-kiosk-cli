@@ -1,6 +1,9 @@
 lockfileVersion: '6.0'
 
 dependencies:
+  '@mysten/bcs':
+    specifier: ^0.7.0
+    version: 0.7.0
   '@mysten/sui.js':
     specifier: ^0.30.0
     version: 0.30.0

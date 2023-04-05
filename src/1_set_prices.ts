@@ -11,15 +11,18 @@ const inputs = (pkg: string) => [
     [`${pkg}::usdc::USDC`, '1000000000000000000000']
 ];
 
+/**
+ * pkg = SuiAddress
+ * oracle: pkg::oracle::Oracle = SuiAddress
+ */
 export default function set_prices(pkg: string, oracle: SharedObjectRef) {
     const tx = new TransactionBlock();
+    const obj = tx.object({ Object: { Shared: oracle }});
+
     const setPrice = (type: string, price: string) => tx.moveCall({
         target: `${pkg}::oracle::set_price`,
         typeArguments: [type],
-        arguments: [
-            tx.object({ Object: { Shared: oracle }}),
-            tx.pure(type, "u256"),
-        ]
+        arguments: [ obj, tx.pure(price, "u256") ]
     });
 
     for (let [type, price] of inputs(pkg)) {
