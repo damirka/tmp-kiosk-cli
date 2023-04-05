@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 const sdk = require("@mysten/sui.js");
-const { TransactionBlock: TxBlock } = sdk;
+const bcs = require("@mysten/bcs");
+const { TransactionBlock: TxBlock, fromHEX } = sdk;
 
 
 if (!process.env.MNEMONIC) {
@@ -10,7 +11,7 @@ if (!process.env.MNEMONIC) {
   process.exit(1);
 }
 
-const connection = new sdk.Connection({ fullnode: "https://fullnode.testnet.sui.io/" });
+const connection = new sdk.Connection({ fullnode: "https://faucet-rpc.testnet.sui.io/" });
 const keypair = sdk.Ed25519Keypair.deriveKeypair(process.env.MNEMONIC);
 const provider = new sdk.JsonRpcProvider(connection);
 const signer = new sdk.RawSigner(keypair, provider);
@@ -29,6 +30,7 @@ const compiled = JSON.parse(
   const sender = await signer.getAddress();
   const collectible = 'd35f7bf9525b4c4aa676d3c32ef53ec8ace095052e51e3db24462e0390d27383';
   const registry = 'be324773163a7b62f6e1546cabd229a4640da14a6ae4aa6d27e965b164ef6a37';
+  const bytes = 'a11ceb0b0600000009010008020812031a12042c0405302107516d08be0180010abe020a0cc80214000403060109020b000002000001040002020701000003030200000800010001050601020204020a030401000202010502080007080300010e010900010b0201090002080008010309000b02010e070803084152545942415241084172747962617261064f7074696f6e095478436f6e746578740861727479626172610c636c61696d5f7469636b65740b636f6c6c65637469626c650b64756d6d795f6669656c6404696e6974066f7074696f6e04736f6d650a74785f636f6e74657874000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002d35f7bf9525b4c4aa676d3c32ef53ec8ace095052e51e3db24462e0390d27383000201070101020107010000000001060b00490a00000038000b0138010200';
 
   console.log(' - Address is: %s', sender);
   console.log(' - Publishing the module and claiming the ticket');
@@ -38,15 +40,27 @@ const compiled = JSON.parse(
   let [pkg, ticket] = await (async function publish() {
     const tx = new TxBlock();
     const [upgradeCap] = tx.publish(
-      compiled.modules.map((m) => [...sdk.fromB64(m)]),
-      compiled.dependencies.map((addr) => sdk.normalizeSuiObjectId(addr))
+      // compiled.modules.map((m) => [...sdk.fromB64(m)]),
+      [bytes].map((e) => [...bcs.fromHEX(e)]),
+      // compiled.dependencies.map((addr) => sdk.normalizeSuiObjectId(addr))
+      [
+        '0xd35f7bf9525b4c4aa676d3c32ef53ec8ace095052e51e3db24462e0390d27383',
+        '0x0000000000000000000000000000000000000000000000000000000000000001',
+        '0x0000000000000000000000000000000000000000000000000000000000000002'
+      ]
     );
     tx.transferObjects([upgradeCap], tx.pure(sender));
+    tx.setGasBudget('6000000');
 
-    const { objectChanges: chg } = await signer.signAndExecuteTransactionBlock({
+    const { objectChanges: chg, effects } = await signer.signAndExecuteTransactionBlock({
       transactionBlock: tx,
-      options: { showObjectChanges: true },
+      options: {
+        showEffects: true,
+        showObjectChanges: true,
+      },
     });
+
+    console.log(effects);
 
     return [
       chg.find((r) => r.type == "published").packageId,
