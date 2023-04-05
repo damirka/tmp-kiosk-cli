@@ -1,0 +1,9 @@
+2023-04-05T20:23:07.007440Z  INFO sui::client_commands: 0x4c1152dded5e37a300a8e84539b87651554cf4e5a878255b037c98957b665afc
+2023-04-05T20:29:52.799240Z  INFO sui::client_commands:                  Object ID                  |  Version   |                    Digest                    |   Owner Type    |               Object Type               
+2023-04-05T20:29:52.799252Z  INFO sui::client_commands: ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+2023-04-05T20:29:52.799254Z  INFO sui::client_commands:  0x3ac5a6c0d0b3cee990a660b3c72a5472b27cc5e90885c1a4ff994db3ccc46cc5 |     1      | 9jeh9NEoE6FhFMLHK+vOHhHwMpmmb0cjo+y+eQopblY= |  AddressOwner   |  Some(Struct(MoveObjectType(GasCoin)))  
+2023-04-05T20:29:52.799255Z  INFO sui::client_commands:  0x45eabe9aa39d9966f89d9a095877893ee92b5bfb809f9a3e901f15d7b8497128 |     1      | 51rTvu/e4I4ENPbTsKDVvcZjL6a9DK0S74ym2/w6Zq4= |  AddressOwner   |  Some(Struct(MoveObjectType(GasCoin)))  
+2023-04-05T20:29:52.799257Z  INFO sui::client_commands:  0x54f961812793ea4003245a77f941b4be13ae47ed9adcf52686e4bc48556abb0d |     1      | RX9+jz7kdNnqEQU1e6wocPlXLoufIbONr0ufqAbGS1Q= |  AddressOwner   |  Some(Struct(MoveObjectType(GasCoin)))  
+2023-04-05T20:29:52.799262Z  INFO sui::client_commands:  0x6e0eee4f1fc6fd72b9d5f77c8e9a756eed8cda2b1dca48144da460b7550c079f |     1      | U/QI9HMUzHgoTMIBhHWEYt8MNIKkb4uA01fZx+V1RvE= |  AddressOwner   |  Some(Struct(MoveObjectType(GasCoin)))  
+2023-04-05T20:29:52.799264Z  INFO sui::client_commands:  0xb2047772c5a94ff1d1b38b9048f6713956ceffe2793f72b4606b602b062dfb87 |     1      | AJGwdqvzfpZgqzh9XsxjxLatPr8R6xVRgVlil99GiEw= |  AddressOwner   |  Some(Struct(MoveObjectType(GasCoin)))  
+2023-04-05T20:29:52.799265Z  INFO sui::client_commands: Showing 5 results.
