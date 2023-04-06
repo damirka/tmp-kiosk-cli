@@ -15,7 +15,7 @@ const inputs = (pkg: string) => [
  * pkg = SuiAddress
  * oracle: pkg::oracle::Oracle = SuiAddress
  */
-export default function set_prices(pkg: string, oracle: SharedObjectRef) {
+export default function setPricesTx(pkg: string, oracle: SharedObjectRef) {
     const tx = new TransactionBlock();
     const obj = tx.object({ Object: { Shared: oracle }});
 
