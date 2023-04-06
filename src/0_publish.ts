@@ -1,11 +1,12 @@
-// Replay TX: https://explorer.sui.io/txblock/4zrJnYC3EGcy7egnTdNyRZLdiXmrvkd1rTh65cByMkJB?network=devnet
+// Replay TX (1): https://explorer.sui.io/txblock/4zrJnYC3EGcy7egnTdNyRZLdiXmrvkd1rTh65cByMkJB?network=devnet
 
 import { TransactionBlock, fromB64, normalizeSuiObjectId } from "@mysten/sui.js";
 import { fromHEX, toHEX } from "@mysten/bcs";
-import { result } from "../res.json";
+import { result as first } from "../res.json";
+import { result as second } from "../res_2.json";
 import { sender } from "./config";
 
-const moduleMap = result.data.bcs.moduleMap;
+const moduleMap = second.data.bcs.moduleMap;
 const modules = [
     moduleMap.signed_int,
     moduleMap.position_utils,
@@ -17,7 +18,7 @@ const modules = [
     moduleMap.math_utils,
     moduleMap.tranche,
     moduleMap.pool,
-].map((m) => [...fromHEX(toHEX(fromB64(m)).replace(/315ac5da29165a42932f911f8bd48cf9594671457c45488a3f93feceab7415a5/igm, '0'.padStart(64, '0')))]);
+].map((m) => [...fromHEX(toHEX(fromB64(m)).replace(/e9b5aaf6090fe148fae86653679af64b866f43964ebc387fc03ab1d37d3a0b44/igm, '0'.padStart(64, '0')))]);
 
 const dependencies = [
     normalizeSuiObjectId("0x1"),
