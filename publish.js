@@ -4,6 +4,7 @@ const { default: setPricesTx } = require('dist/src/1_set_prices');
 const { default: prepareTx } = require('dist/src/2_prepare');
 const { default: mintCoinsTx } = require('dist/src/3_mint_coins');
 const { default: addLiquidityTx } = require('dist/src/4_add_liquidity');
+const { default: increasePositionTx } = require('dist/src/5_increase_position');
 
 const sdk = require("@mysten/sui.js");
 const keypair = sdk.Ed25519Keypair.deriveKeypair(process.env.MNEMONIC);
@@ -59,7 +60,7 @@ const signer = new sdk.RawSigner(keypair, provider);
   })().catch((err) => handleError(2, err));
 
   // mint coins tx
-  let [coins] = await (async function () {
+  let [coins, mutatedCaps] = await (async function () {
     const { effects, objectChanges } = await signer.signAndExecuteTransactionBlock({
       transactionBlock: mintCoinsTx(
         pkg,
@@ -75,7 +76,8 @@ const signer = new sdk.RawSigner(keypair, provider);
     }).catch((err) => handleError(3, err));
     console.log('Completed: mintCoinsTx');
     return [
-      objectChanges.filter((r) => r.type == "created")
+      objectChanges.filter((r) => r.type == "created"),
+      objectChanges.filter((r) => r.type == "mutated"),
     ];
   })().catch((err) => handleError(3, err));
 
@@ -83,22 +85,22 @@ const signer = new sdk.RawSigner(keypair, provider);
     {
       coinType: `${pkg}::btc::BTC`,
       splitAmount: "1000000000",
-      sourceCoin: getOwned(coins, `Coin<${pkg}::btc::BTC>`),
+      sourceCoin: getOwned(coins, `0x2::coin::Coin<${pkg}::btc::BTC>`),
     },
     {
       coinType: `${pkg}::eth::ETH`,
       splitAmount: "20000000000",
-      sourceCoin: getOwned(coins, `Coin<${pkg}::eth::ETH>`),
+      sourceCoin: getOwned(coins, `0x2::coin::Coin<${pkg}::eth::ETH>`),
     },
     {
       coinType: `${pkg}::usdt::USDT`,
       splitAmount: "600000000000000",
-      sourceCoin: getOwned(coins, `Coin<${pkg}::usdt::USDT>`),
+      sourceCoin: getOwned(coins, `0x2::coin::Coin<${pkg}::usdt::USDT>`),
     },
     {
       coinType: `${pkg}::usdc::USDC`,
       splitAmount: "100000000000000",
-      sourceCoin: getOwned(coins, `Coin<${pkg}::usdc::USDC>`),
+      sourceCoin: getOwned(coins, `0x2::coin::Coin<${pkg}::usdc::USDC>`),
     }
   ];
 
@@ -118,6 +120,29 @@ const signer = new sdk.RawSigner(keypair, provider);
       }
     }).catch((err) => handleError(`777 - ${coinType}`, err));
   }
+
+  let [] = await (async function () {
+    const { effects, objectChanges } = await signer.signAndExecuteTransactionBlock({
+      transactionBlock: increasePositionTx(
+        pkg,
+        getOwned(mutatedCaps, `TreasuryCap<${pkg}::btc::BTC>`),
+        // getOwned(mutatedCaps, `TreasuryCap<${pkg}::eth::ETH>`),
+        getOwned(mutatedCaps, `TreasuryCap<${pkg}::usdt::USDT>`),
+        // getOwned(mutatedCaps, `TreasuryCap<${pkg}::usdc::USDC`),
+        getShared(objects, `${pkg}::pool::Global`),
+        getShared(objects, `${pkg}::oracle::Oracle`),
+      ),
+      options: {
+        showEffects: true,
+        showObjectChanges: true,
+      }
+    }).catch((err) => handleError(3, err));
+    console.log('Completed: increasePositionTx');
+    return [
+      // objectChanges.filter((r) => r.type == "created"),
+      // objectChanges.filter((r) => r.type == "mutated"),
+    ];
+  })().catch((err) => handleError(5, err));
 })();
 
 function getOwned(objects, type) {

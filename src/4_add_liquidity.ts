@@ -19,6 +19,7 @@ export default function addLiquidity(
     const source = tx.object({ Object: { ImmOrOwned: sourceCoin }});
     const [ split ] = tx.splitCoins(source, [ tx.pure(splitAmount, "u64") ]);
 
+    tx.setGasBudget(BigInt("20000000"));
     tx.moveCall({
         target: `${pkg}::pool::add_liquidity`,
         typeArguments: [ coinType, `${pkg}::tranche::TRANCHE` ],
