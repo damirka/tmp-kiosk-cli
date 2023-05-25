@@ -54,41 +54,42 @@ program
 
 program
   .command('new')
-  .description('Create and share a Kiosk; send OwnerCap to sender')
+  .description('create and share a Kiosk; send OwnerCap to sender')
   .action(newKiosk);
 
 program
   .command('contents')
-  .description('List all Items and Listings in the Kiosk owned by the sender')
-  .option('--id, <kiosk id>', 'The ID of the Kiosk to look up')
+  .description('list all Items and Listings in the Kiosk owned by the sender')
+  .option('-i, --id <id>', 'The ID of the Kiosk to look up')
+  .option('-a, --address <address>', 'The address of the Kiosk owner')
   .action(showContents);
 
 program
   .command('list')
-  .description('List an item in the Kiosk for the specified amount of SUI')
+  .description('list an item in the Kiosk for the specified amount of SUI')
   .argument('<item ID>', 'The ID of the item to list')
   .argument('<amount MIST>', 'The amount of SUI to list the item for')
   .action(listItem);
 
 program
   .command('delist')
-  .description('Delist an item from the Kiosk')
+  .description('delist an item from the Kiosk')
   .argument('<item ID>', 'The ID of the item to delist')
   .action(delistItem);
 
 program
   .command('mint-to-kiosk')
-  .description('Mint a test item into the user Kiosk')
+  .description('mint a test item into the user Kiosk')
   .action(mintToKiosk);
 
 program
   .command('purchase')
-  .description('Purchase an item from the specified Kiosk')
+  .description('purchase an item from the specified Kiosk')
   .argument('<kiosk ID>', 'The ID of the Kiosk to purchase from')
   .argument('<item ID>', 'The ID of the item to purchase')
   .action(purchaseItem);
 
-program.parse();
+program.parse(process.argv);
 
 /**
  * Command: `new`
@@ -114,8 +115,7 @@ async function newKiosk() {
  * Description: Show the contents of the Kiosk owned by the sender (or the
  * specified address) or directly by the specified Kiosk ID
  */
-async function showContents() {
-  const { id, address } = program.opts();
+async function showContents({ id, address }) {
   let kioskId = null;
 
   if (!!id) {
