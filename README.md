@@ -4,8 +4,14 @@
 
 - nodejs v19
 - pnpm (`npm i -g pnpm`)
+- testnet account
 
 ## Install and use
+
+Export a mnemonic phrase
+```
+export MNEMONIC="..."
+```
 
 Create a Kiosk
 ```
