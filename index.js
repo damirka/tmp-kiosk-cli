@@ -273,13 +273,14 @@ async function sendTx(txb) {
     if ('errors' in result) {
       console.error('Errors found: %s', result.errors);
     } else {
-      console.log(
-        JSON.stringify(
-          result.objectChanges.filter((a) => a.type == 'created'),
-          null,
-          2,
-        ),
-      );
+      console.table(
+        result.objectChanges.map((change) => ({
+          objectId: change.objectId,
+          type: change.type,
+          sender: formatAddress(change.sender),
+          objectType: formatType(change.objectType),
+        }))
+      )
     }
   });
 }
