@@ -1,15 +1,39 @@
 # Install (testnet)
 
+## Requirements
+
+- nodejs v19
+- pnpm (`npm i -g pnpm`)
+
+## Install and use
+
+Create a Kiosk
 ```
-# skip the step if sui is installed
-cargo install --locked --git https://github.com/MystenLabs/sui.git --branch testnet sui
-
-# install sui.js
-npm install
-
-# export a variable or use it when running `publish.js`
-export MNEMONIC="..."
-
-# run the suite: publish, setup, purchase
-node publish.js
+pnpm cli new
 ```
+
+Mint a TestItem
+```
+pnpm cli mint-to-kiosk
+```
+
+View Kiosk contents
+```
+pnpm cli contents
+
+# search contents of a specific Kiosk
+# pnpm cli contents --id <kiosk_id>
+
+# search Kiosk at user address
+# pnpm cli contents --address <address>
+```
+
+List an item in the Kiosk
+```
+# list an item in the Kiosk
+pnpm list <item_id> <price>
+```
+
+## License
+
+MIT
