@@ -21,7 +21,7 @@ const {
   formatAddress
 } = require('@mysten/sui.js');
 const { program } = require('commander');
-const { createKioskAndShare, KIOSK_TYPE, purchaseAndResolvePolicies, fetchKiosk, place, list, purchase, queryTransferPolicy } = require('@mysten/kiosk');
+const { createKioskAndShare, KIOSK_TYPE, purchaseAndResolvePolicies, fetchKiosk, place, list, purchase, queryTransferPolicy, delist } = require('@mysten/kiosk');
 
 /** The published package ID. {@link https://suiexplorer.com/object/0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090?network=testnet} */
 const PKG = '0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090';
@@ -60,7 +60,7 @@ program
 program
   .command('contents')
   .description('List all Items and Listings in the Kiosk owned by the sender')
-  .option('-id, <kiosk id>', 'The ID of the Kiosk to look up')
+  .option('--id, <kiosk id>', 'The ID of the Kiosk to look up')
   .action(showContents);
 
 program
@@ -69,6 +69,12 @@ program
   .argument('<item ID>', 'The ID of the item to list')
   .argument('<amount MIST>', 'The amount of SUI to list the item for')
   .action(listItem);
+
+program
+  .command('delist')
+  .description('Delist an item from the Kiosk')
+  .argument('<item ID>', 'The ID of the item to delist')
+  .action(delistItem);
 
 program
   .command('mint-to-kiosk')
@@ -175,6 +181,24 @@ async function listItem(itemId, amount) {
   const kioskArg = txb.object(kioskId);
   const capArg = txb.objectRef({ ...kioskCap });
   list(txb, ITEM_TYPE, kioskArg, capArg, itemId, amount);
+  return sendTx(txb);
+}
+
+/**
+ * Command: `delist`
+ * Description: Delists an active listing in the Kiosk
+ */
+async function delistItem(itemId) {
+  const kioskCap = await findKioskCap().catch(() => null);
+  if (kioskCap === null) {
+    throw new Error('No Kiosk found for sender');
+  }
+
+  const kioskId = kioskCap.content.fields.for;
+  const txb = new TransactionBlock();
+  const kioskArg = txb.object(kioskId);
+  const capArg = txb.objectRef({ ...kioskCap });
+  delist(txb, ITEM_TYPE, kioskArg, capArg, itemId);
   return sendTx(txb);
 }
 
