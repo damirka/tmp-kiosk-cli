@@ -4,12 +4,21 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "cli": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "prettier": {
+    "printWidth": 100,
+    "semi": true,
+    "singleQuote": true,
+    "trailingComma": "all"
+  },
   "dependencies": {
-    "@mysten/sui.js": "^0.30.0"
+    "@mysten/kiosk": "0.0.0-experimental-20230525185817",
+    "@mysten/sui.js": "^0.34.1",
+    "commander": "^10.0.1"
   }
 }
