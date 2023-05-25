@@ -89,6 +89,12 @@ program
   .argument('<item ID>', 'The ID of the item to purchase')
   .action(purchaseItem);
 
+program
+  .command('search')
+  .description('search open listings in Kiosks')
+  .argument('<type>', 'The type of the item to search for')
+  .action(searchType);
+
 program.parse(process.argv);
 
 /**
@@ -258,6 +264,46 @@ async function purchaseItem(kioskId, itemId) {
   txb.transferObjects([item], txb.pure(await signer.getAddress(), 'address'));
 
   return sendTx(txb);
+}
+
+/**
+ * Command: `search`
+ * Description: Searches for items of the specified type
+ */
+async function searchType(type) {
+  const [{ data: listed }, { data: delisted }, { data: purchased }] = await Promise.all([
+    provider.queryEvents({
+      query: { MoveEventType: `0x2::kiosk::ItemListed<${type}>` },
+      limit: 1000,
+    }),
+    provider.queryEvents({
+      query: { MoveEventType: `0x2::kiosk::ItemDelisted<${type}>` },
+      limit: 1000,
+    }),
+    provider.queryEvents({
+      query: { MoveEventType: `0x2::kiosk::ItemPurchased<${type}>` },
+      limit: 1000,
+    })
+  ]);
+
+  const listings = listed
+    .filter((e) => {
+      const { id: itemId, kiosk } = e.parsedJson;
+      const timestamp = e.timestampMs;
+      return !delisted.some((item) => (itemId == item.parsedJson.id && timestamp < item.timestampMs));
+    })
+    .filter((e) => {
+      const { id: itemId, kiosk } = e.parsedJson;
+      const timestamp = e.timestampMs;
+      return !purchased.some((item) => (itemId == item.parsedJson.id && timestamp < item.timestampMs));
+    })
+
+  console.table(listings.map((e) => ({
+    objectId: e.parsedJson.id,
+    kiosk: e.parsedJson.kiosk,
+    price: e.parsedJson.price,
+    // type: formatType(e.type),
+  })));
 }
 
 /**
