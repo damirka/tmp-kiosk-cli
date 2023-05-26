@@ -21,19 +21,18 @@ const {
   JsonRpcProvider,
   formatAddress,
   isValidSuiAddress,
+  isValidSuiObjectId,
 } = require('@mysten/sui.js');
 const { program } = require('commander');
 const {
   createKioskAndShare,
-  KIOSK_TYPE,
-  purchaseAndResolvePolicies,
   fetchKiosk,
   place,
   list,
-  purchase,
   queryTransferPolicy,
   delist,
   withdrawFromKiosk,
+  take,
 } = require('@mysten/kiosk');
 
 /** The published package ID. {@link https://suiexplorer.com/object/0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090?network=testnet} */
@@ -85,6 +84,13 @@ program
   .option('-i, --id <id>', 'The ID of the Kiosk to look up')
   .option('-a, --address <address>', 'The address of the Kiosk owner')
   .action(showContents);
+
+program
+  .command('take')
+  .description('Take an item from the Kiosk and transfer to sender or to <address>')
+  .argument('<item ID>', 'The ID of the item to take')
+  .option('-a, --address <address>')
+  .action(takeItem);
 
 program
   .command('list')
@@ -152,7 +158,11 @@ async function newKiosk() {
 async function showContents({ id, address }) {
   let kioskId = null;
 
-  if (!!id) {
+  if (id) {
+    if (!isValidSuiObjectId(id)) {
+      throw new Error(`Invalid Kiosk ID: "${id}"`);
+    }
+
     kioskId = id;
   } else {
     const sender = address || (await signer.getAddress());
@@ -194,19 +204,56 @@ async function showContents({ id, address }) {
 }
 
 /**
+ * Command: `take`
+ * Description: Take an item from the Kiosk and transfer to sender (or to
+ * --address <address>)
+ */
+async function takeItem(itemId, { address }) {
+  const kioskCap = await findKioskCap().catch(() => null);
+  const receiver = address || (await signer.getAddress());
+
+  if (!isValidSuiAddress(receiver)) {
+    throw new Error('Invalid receiver address: "%s"', receiver);
+  }
+
+  if (!isValidSuiObjectId(itemId)) {
+    throw new Error('Invalid Item ID: "%s"', itemId);
+  }
+
+  if (kioskCap === null) {
+    throw new Error('No Kiosk found for sender; use `new` to create one');
+  }
+
+  const item = await provider.getObject({ id: itemId, options: { showType: true }});
+
+  if ('error' in item || !item.data) {
+    throw new Error(`Item ${itemId} not found; error: ` + item.error);
+  }
+
+  const txb = new TransactionBlock();
+  const kioskArg = txb.object(kioskCap.content.fields.for);
+  const capArg = txb.objectRef({ ...kioskCap });
+  const taken = take(txb, item.data.type, kioskArg, capArg, itemId);
+
+  txb.transferObjects([taken], txb.pure(receiver, 'address'));
+
+  return sendTx(txb);
+}
+
+/**
  * Command: `mint-to-kiosk`
  * Description: Mints a test item into the user Kiosk (if Kiosk exists,
  * aborts otherwise)
  */
 async function mintToKiosk() {
   const kioskCap = await findKioskCap().catch(() => null);
+
   if (kioskCap === null) {
-    throw new Error('No Kiosk found for sender');
+    throw new Error('No Kiosk found for sender; use `new` to create one');
   }
-  const kioskId = kioskCap.content.fields.for;
 
   const txb = new TransactionBlock();
-  const kioskArg = txb.object(kioskId);
+  const kioskArg = txb.object(kioskCap.content.fields.for);
   const capArg = txb.objectRef({ ...kioskCap });
   const nft = txb.moveCall({ target: MINT_FUNC });
 
@@ -221,15 +268,26 @@ async function mintToKiosk() {
  */
 async function listItem(itemId, amount) {
   const kioskCap = await findKioskCap().catch(() => null);
+
   if (kioskCap === null) {
-    throw new Error('No Kiosk found for sender');
+    throw new Error('No Kiosk found for sender; use `new` to create one');
   }
-  const kioskId = kioskCap.content.fields.for;
+
+  if (!isValidSuiObjectId(itemId)) {
+    throw new Error('Invalid Item ID: "%s"', itemId);
+  }
+
+  const item = await provider.getObject({ id: itemId, options: { showType: true }});
+
+  if ('error' in item || !item.data) {
+    throw new Error(`Item ${itemId} not found; error: ` + item.error);
+  }
 
   const txb = new TransactionBlock();
-  const kioskArg = txb.object(kioskId);
+  const kioskArg = txb.object(kioskCap.content.fields.for);
   const capArg = txb.objectRef({ ...kioskCap });
-  list(txb, ITEM_TYPE, kioskArg, capArg, itemId, amount);
+  list(txb, item.data.type, kioskArg, capArg, itemId, amount);
+
   return sendTx(txb);
 }
 
@@ -239,15 +297,26 @@ async function listItem(itemId, amount) {
  */
 async function delistItem(itemId) {
   const kioskCap = await findKioskCap().catch(() => null);
+
   if (kioskCap === null) {
-    throw new Error('No Kiosk found for sender');
+    throw new Error('No Kiosk found for sender; use `new` to create one');
   }
 
-  const kioskId = kioskCap.content.fields.for;
+  if (!isValidSuiObjectId(itemId)) {
+    throw new Error('Invalid Item ID: "%s"', itemId);
+  }
+
+  const item = await provider.getObject({ id: itemId, options: { showType: true }});
+
+  if ('error' in item || !item.data) {
+    throw new Error(`Item ${itemId} not found; error: ` + item.error);
+  }
+
   const txb = new TransactionBlock();
-  const kioskArg = txb.object(kioskId);
+  const kioskArg = txb.object(kioskCap.content.fields.for);
   const capArg = txb.objectRef({ ...kioskCap });
-  delist(txb, ITEM_TYPE, kioskArg, capArg, itemId);
+  delist(txb, item.data.type, kioskArg, capArg, itemId);
+
   return sendTx(txb);
 }
 
@@ -312,7 +381,7 @@ async function purchaseItem(kioskId, itemId, opts) {
   if (target === 'kiosk') {
     const kioskCap = await findKioskCap().catch(() => null);
     if (kioskCap === null) {
-      throw new Error('No Kiosk found for sender; cannot place item to Kiosk');
+      throw new Error('No Kiosk found for sender; use `new` to create one; cannot place item to Kiosk');
     }
 
     const kioskArg = txb.object(kioskCap.content.fields.for);
@@ -387,7 +456,7 @@ async function withdrawAll() {
   const sender = await signer.getAddress();
   const kioskCap = await findKioskCap(sender).catch(() => null);
   if (kioskCap === null) {
-    throw new Error('No Kiosk found for sender');
+    throw new Error('No Kiosk found for sender; use `new` to create one');
   }
 
   const kioskId = kioskCap.content.fields.for;
@@ -405,6 +474,11 @@ async function withdrawAll() {
  */
 async function findKioskCap(address) {
   const sender = address || (await signer.getAddress());
+
+  if (!isValidSuiAddress(sender)) {
+    throw new Error(`Invalid address "${sender}"`);
+  }
+
   const objects = await provider.getOwnedObjects({
     owner: sender,
     filter: { StructType: '0x2::kiosk::KioskOwnerCap' },
@@ -413,7 +487,7 @@ async function findKioskCap(address) {
 
   let [kioskCap] = objects.data;
   if (!kioskCap) {
-    throw new Error(`No Kiosk found for ${sender}`);
+    throw new Error(`No Kiosk found for "${sender}"`);
   }
 
   if ('error' in kioskCap || !('data' in kioskCap)) {
