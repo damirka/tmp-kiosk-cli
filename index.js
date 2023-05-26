@@ -2,14 +2,15 @@
  * This script uses the `test.move` module to mint an NFT (TransferPolicy is
  * already created and published).
  *
- * Scenarios covered:
- * ```
- * # supported scenarios (one at the time):
+ * TODO:
  *
- * --new # create and share a Kiosk to sender
- * --purchase-from-kiosk <ID> <ITEM_ID> # purchase an item from the specified Kiosk
- * --mint-to-kiosk <ID> <ITEM_ID> # mint an item and place it to the specified Kiosk
- * ```
+ * - transfer from Kiosk
+ * - locking in the Kiosk
+ * - purchase to sender (if not locked)
+ * - place into Kiosk (from inventory)
+ * - take to sender
+ *
+ * Gas logging for every operation!
  */
 
 const {
@@ -18,10 +19,21 @@ const {
   Ed25519Keypair,
   TransactionBlock,
   JsonRpcProvider,
-  formatAddress
+  formatAddress,
 } = require('@mysten/sui.js');
 const { program } = require('commander');
-const { createKioskAndShare, KIOSK_TYPE, purchaseAndResolvePolicies, fetchKiosk, place, list, purchase, queryTransferPolicy, delist, withdrawFromKiosk } = require('@mysten/kiosk');
+const {
+  createKioskAndShare,
+  KIOSK_TYPE,
+  purchaseAndResolvePolicies,
+  fetchKiosk,
+  place,
+  list,
+  purchase,
+  queryTransferPolicy,
+  delist,
+  withdrawFromKiosk,
+} = require('@mysten/kiosk');
 
 /** The published package ID. {@link https://suiexplorer.com/object/0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090?network=testnet} */
 const PKG = '0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090';
@@ -95,10 +107,7 @@ program
   .argument('<type>', 'The type of the item to search for')
   .action(searchType);
 
-program
-  .command('withdraw')
-  .description('Withdraw all profits from the Kiosk')
-  .action(withdrawAll);
+program.command('withdraw').description('Withdraw all profits from the Kiosk').action(withdrawAll);
 
 program.parse(process.argv);
 
@@ -132,7 +141,7 @@ async function showContents({ id, address }) {
   if (!!id) {
     kioskId = id;
   } else {
-    const sender = address || await signer.getAddress();
+    const sender = address || (await signer.getAddress());
     const kioskCap = await findKioskCap(sender).catch(() => null);
     if (kioskCap == null) {
       throw new Error(`No Kiosk found for ${sender}`);
@@ -140,23 +149,34 @@ async function showContents({ id, address }) {
     kioskId = kioskCap.content.fields.for;
   }
 
-  const { data: { items, listings, kiosk } } = await fetchKiosk(provider, kioskId, { limit: 1000 }, {
-    includeKioskFields: true,
-    withListingPrices: true,
-    includeItems: true,
-  });
+  const {
+    data: { items, listings, kiosk },
+  } = await fetchKiosk(
+    provider,
+    kioskId,
+    { limit: 1000 },
+    {
+      includeKioskFields: true,
+      withListingPrices: true,
+      includeItems: true,
+    },
+  );
 
   console.log('Description');
   console.log('- Kiosk ID:    %s', kioskId);
   console.log('- Profits:     %s', kiosk.profits);
   console.log('- UID Exposed: %s', kiosk.allowExtensions);
   console.log('- Item Count:  %s', kiosk.itemCount);
-  console.table(items.map((item) => ({
-    objectId: item.data.objectId,
-    type: formatType(item.data.type),
-    listed: listings.some((l) => l.itemId == item.data.objectId),
-    price: listings.find((l) => l.itemId == item.data.objectId)?.price || 'N/A'
-  })).sort((a, b) => a.listed - b.listed));
+  console.table(
+    items
+      .map((item) => ({
+        objectId: item.data.objectId,
+        type: formatType(item.data.type),
+        listed: listings.some((l) => l.itemId == item.data.objectId),
+        price: listings.find((l) => l.itemId == item.data.objectId)?.price || 'N/A',
+      }))
+      .sort((a, b) => a.listed - b.listed),
+  );
 }
 
 /**
@@ -220,16 +240,19 @@ async function delistItem(itemId) {
 /**
  * Command: `purchase`
  * Description: Purchases an item from the specified Kiosk
+ *
+ * TODO:
+ * - add destination "kiosk" or "user" (kiosk by default)
  */
 async function purchaseItem(kioskId, itemId) {
-  const itemInfo = await provider.getObject({ id: itemId, options: { showType: true }});
+  const itemInfo = await provider.getObject({ id: itemId, options: { showType: true } });
   const [kiosk, policies, listing] = await Promise.all([
-    provider.getObject({ id: kioskId, options: { showOwner: true }}),
+    provider.getObject({ id: kioskId, options: { showOwner: true } }),
     queryTransferPolicy(provider, itemInfo.data.type),
     provider.getDynamicFieldObject({
       parentId: kioskId,
-      name: { type: '0x2::kiosk::Listing', value: { id: itemId, is_exclusive: false }}
-    })
+      name: { type: '0x2::kiosk::Listing', value: { id: itemId, is_exclusive: false } },
+    }),
   ]);
 
   if ('error' in listing || !listing.data) {
@@ -253,22 +276,22 @@ async function purchaseItem(kioskId, itemId) {
   const kioskArg = txb.sharedObjectRef({
     mutable: true,
     objectId: kioskId,
-    initialSharedVersion: kiosk.data.owner.Shared.initial_shared_version
+    initialSharedVersion: kiosk.data.owner.Shared.initial_shared_version,
   });
 
   const policyArg = txb.object(policies[0].id);
-  const payment = txb.splitCoins(txb.gas, [ txb.pure(price, 'u64') ]);
+  const payment = txb.splitCoins(txb.gas, [txb.pure(price, 'u64')]);
   const idArg = txb.pure(itemId, 'address');
   const [item, req] = txb.moveCall({
     target: `0x2::kiosk::purchase`,
     typeArguments: [itemInfo.data.type],
-    arguments: [kioskArg, idArg, payment]
+    arguments: [kioskArg, idArg, payment],
   });
 
   txb.moveCall({
     target: `0x2::transfer_policy::confirm_request`,
     typeArguments: [itemInfo.data.type],
-    arguments: [policyArg, req]
+    arguments: [policyArg, req],
   });
   txb.transferObjects([item], txb.pure(await signer.getAddress(), 'address'));
 
@@ -292,27 +315,31 @@ async function searchType(type) {
     provider.queryEvents({
       query: { MoveEventType: `0x2::kiosk::ItemPurchased<${type}>` },
       limit: 1000,
-    })
+    }),
   ]);
 
   const listings = listed
     .filter((e) => {
-      const { id: itemId, kiosk } = e.parsedJson;
+      const { id: itemId } = e.parsedJson;
       const timestamp = e.timestampMs;
-      return !delisted.some((item) => (itemId == item.parsedJson.id && timestamp < item.timestampMs));
+      return !delisted.some((item) => itemId == item.parsedJson.id && timestamp < item.timestampMs);
     })
     .filter((e) => {
-      const { id: itemId, kiosk } = e.parsedJson;
+      const { id: itemId } = e.parsedJson;
       const timestamp = e.timestampMs;
-      return !purchased.some((item) => (itemId == item.parsedJson.id && timestamp < item.timestampMs));
-    })
+      return !purchased.some(
+        (item) => itemId == item.parsedJson.id && timestamp < item.timestampMs,
+      );
+    });
 
-  console.table(listings.map((e) => ({
-    objectId: e.parsedJson.id,
-    kiosk: e.parsedJson.kiosk,
-    price: e.parsedJson.price,
-    // type: formatType(e.type),
-  })));
+  console.log('- Type:', type);
+  console.table(
+    listings.map((e) => ({
+      objectId: e.parsedJson.id,
+      kiosk: e.parsedJson.kiosk,
+      price: e.parsedJson.price,
+    })),
+  );
 }
 
 /**
@@ -364,34 +391,41 @@ async function findKioskCap(address) {
  * If there are errors, print them.
  */
 async function sendTx(txb) {
-  return signer.signAndExecuteTransactionBlock({
-    transactionBlock: txb,
-    options: {
-      showObjectChanges: true,
-    },
-  }).then((result) => {
-    if ('errors' in result) {
-      console.error('Errors found: %s', result.errors);
-    } else {
-      console.table(
-        result.objectChanges.map((change) => ({
-          objectId: change.objectId,
-          type: change.type,
-          sender: formatAddress(change.sender),
-          objectType: formatType(change.objectType),
-        }))
-      )
-    }
-  });
-}
+  return signer
+    .signAndExecuteTransactionBlock({
+      transactionBlock: txb,
+      options: {
+        showEffects: true,
+        showObjectChanges: true,
+      },
+    })
+    .then((result) => {
+      if ('errors' in result) {
+        console.error('Errors found: %s', result.errors);
+      } else {
+        console.table(
+          result.objectChanges.map((change) => ({
+            objectId: change.objectId,
+            type: change.type,
+            sender: formatAddress(change.sender),
+            objectType: formatType(change.objectType),
+          })),
+        );
+      }
+      let gas = result.effects.gasUsed;
+      let total = BigInt(gas.computationCost) + BigInt(gas.storageCost) - BigInt(gas.storageRebate);
+
+      console.log('Computation cost:          %s', gas.computationCost);
+      console.log('Storage cost:              %s', gas.storageCost);
+      console.log('Storage rebate:            %s', gas.storageRebate);
+      console.log('NonRefundable Storage Fee: %s', gas.nonRefundableStorageFee);
+      console.log('Total Gas:                 %s', total.toString());
+    });
+  }
 
 function formatType(type) {
   let parts = type.split('::');
-  return [
-    formatAddress(parts[0]),
-    parts[1],
-    parts[2],
-  ].join('::');
+  return [formatAddress(parts[0]), parts[1], parts[2]].join('::');
 }
 
 process.on('uncaughtException', (err) => {
