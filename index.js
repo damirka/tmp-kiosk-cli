@@ -20,6 +20,7 @@ const {
   TransactionBlock,
   JsonRpcProvider,
   formatAddress,
+  isValidSuiAddress,
 } = require('@mysten/sui.js');
 const { program } = require('commander');
 const {
@@ -42,6 +43,15 @@ const ITEM_TYPE = `${PKG}::test::TestItem`;
 /** The `mint` function in the `test` package */
 const MINT_FUNC = `${PKG}::test::mint`;
 
+/**
+ * List of known types for shorthand search in the `search` command.
+ */
+const KNOWN_TYPES = {
+  suifrens: '0x80d7de9c4a56194087e0ba0bf59492aa8e6a5ee881606226930827085ddf2332::suifrens::SuiFren<0x80d7de9c4a56194087e0ba0bf59492aa8e6a5ee881606226930827085ddf2332::capy::Capy>',
+  test: ITEM_TYPE
+};
+
+
 /** JsonRpcProvider for the Testnet */
 const provider = new JsonRpcProvider(testnetConnection);
 
@@ -61,7 +71,7 @@ const signer = (function (mnemonic) {
 
 program
   .name('kiosk-cli')
-  .description('Simple CLI to interact with Kiosk smart contracts')
+  .description('Simple CLI to interact with Kiosk smart contracts. \nRequires MNEMONIC environment variable.')
   .version('0.0.1');
 
 program
@@ -99,15 +109,19 @@ program
   .description('purchase an item from the specified Kiosk')
   .argument('<kiosk ID>', 'The ID of the Kiosk to purchase from')
   .argument('<item ID>', 'The ID of the item to purchase')
+  .option('-t, --target ["kiosk" | <address>]', 'Purchase destination: "kiosk" for user Kiosk or \ncustom address (defaults to sender)')
   .action(purchaseItem);
 
 program
   .command('search')
   .description('search open listings in Kiosks')
-  .argument('<type>', 'The type of the item to search for')
+  .argument('<type>', 'The type of the item to search for. \nAvailable aliases: "suifrens", "test"')
   .action(searchType);
 
-program.command('withdraw').description('Withdraw all profits from the Kiosk').action(withdrawAll);
+program
+  .command('withdraw')
+  .description('Withdraw all profits from the Kiosk to the Kiosk Owner')
+  .action(withdrawAll);
 
 program.parse(process.argv);
 
@@ -244,7 +258,8 @@ async function delistItem(itemId) {
  * TODO:
  * - add destination "kiosk" or "user" (kiosk by default)
  */
-async function purchaseItem(kioskId, itemId) {
+async function purchaseItem(kioskId, itemId, opts) {
+  const { target } = opts;
   const itemInfo = await provider.getObject({ id: itemId, options: { showType: true } });
   const [kiosk, policies, listing] = await Promise.all([
     provider.getObject({ id: kioskId, options: { showOwner: true } }),
@@ -293,7 +308,26 @@ async function purchaseItem(kioskId, itemId) {
     typeArguments: [itemInfo.data.type],
     arguments: [policyArg, req],
   });
-  txb.transferObjects([item], txb.pure(await signer.getAddress(), 'address'));
+
+  if (target === 'kiosk') {
+    const kioskCap = await findKioskCap().catch(() => null);
+    if (kioskCap === null) {
+      throw new Error('No Kiosk found for sender; cannot place item to Kiosk');
+    }
+
+    const kioskArg = txb.object(kioskCap.content.fields.for);
+    const capArg = txb.objectRef({ ...kioskCap });
+
+    place(txb, itemInfo.data.type, kioskArg, capArg, item);
+  } else if (target) {
+    if (!isValidSuiAddress(target)) {
+      throw new Error(`Invalid target address ${target}`);
+    }
+
+    txb.transferObjects([item], txb.pure(target, 'address'));
+  } else {
+    txb.transferObjects([item], txb.pure(await signer.getAddress(), 'address'));
+  }
 
   return sendTx(txb);
 }
@@ -303,6 +337,9 @@ async function purchaseItem(kioskId, itemId) {
  * Description: Searches for items of the specified type
  */
 async function searchType(type) {
+  // use known types if available;
+  type = KNOWN_TYPES[type] || type;
+
   const [{ data: listed }, { data: delisted }, { data: purchased }] = await Promise.all([
     provider.queryEvents({
       query: { MoveEventType: `0x2::kiosk::ItemListed<${type}>` },
@@ -421,11 +458,17 @@ async function sendTx(txb) {
       console.log('NonRefundable Storage Fee: %s', gas.nonRefundableStorageFee);
       console.log('Total Gas:                 %s', total.toString());
     });
-  }
+}
 
+/**
+ * Shortens the type (currently, a little messy).
+ */
 function formatType(type) {
-  let parts = type.split('::');
-  return [formatAddress(parts[0]), parts[1], parts[2]].join('::');
+  let [pre, post] = type.split('<');
+  let parts = pre.split('::');
+  return !!post
+    ? [formatAddress(parts[0]), parts[1], parts[2]].join('::') + '<' + formatType(post)
+    : [formatAddress(parts[0]), parts[1]].join('::');
 }
 
 process.on('uncaughtException', (err) => {
