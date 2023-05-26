@@ -329,6 +329,19 @@ async function delistItem(itemId) {
  */
 async function purchaseItem(kioskId, itemId, opts) {
   const { target } = opts;
+
+  if (target && target !== 'kiosk' && !isValidSuiAddress(target)) {
+    throw new Error('Invalid target address: "%s"; use "kiosk" if you want to store in your Kiosk', target);
+  }
+
+  if (!isValidSuiObjectId(itemId)) {
+    throw new Error('Invalid Item ID: "%s"', itemId);
+  }
+
+  if (!isValidSuiObjectId(kioskId)) {
+    throw new Error('Invalid Kiosk ID: "%s"', kioskId);
+  }
+
   const itemInfo = await provider.getObject({ id: itemId, options: { showType: true } });
   const [kiosk, policies, listing] = await Promise.all([
     provider.getObject({ id: kioskId, options: { showOwner: true } }),
@@ -388,14 +401,9 @@ async function purchaseItem(kioskId, itemId, opts) {
     const capArg = txb.objectRef({ ...kioskCap });
 
     place(txb, itemInfo.data.type, kioskArg, capArg, item);
-  } else if (target) {
-    if (!isValidSuiAddress(target)) {
-      throw new Error(`Invalid target address ${target}`);
-    }
-
-    txb.transferObjects([item], txb.pure(target, 'address'));
   } else {
-    txb.transferObjects([item], txb.pure(await signer.getAddress(), 'address'));
+    const receiver = target || (await signer.getAddress());
+    txb.transferObjects([item], txb.pure(receiver, 'address'));
   }
 
   return sendTx(txb);
