@@ -148,7 +148,6 @@ async function showContents({ id, address }) {
 
   console.log('Description');
   console.log('- Kiosk ID:    %s', kioskId);
-  console.log('- Sender is:   %s', sender);
   console.log('- Profits:     %s', kiosk.profits);
   console.log('- UID Exposed: %s', kiosk.allowExtensions);
   console.log('- Item Count:  %s', kiosk.itemCount);
