@@ -21,7 +21,7 @@ const {
   formatAddress
 } = require('@mysten/sui.js');
 const { program } = require('commander');
-const { createKioskAndShare, KIOSK_TYPE, purchaseAndResolvePolicies, fetchKiosk, place, list, purchase, queryTransferPolicy, delist } = require('@mysten/kiosk');
+const { createKioskAndShare, KIOSK_TYPE, purchaseAndResolvePolicies, fetchKiosk, place, list, purchase, queryTransferPolicy, delist, withdrawFromKiosk } = require('@mysten/kiosk');
 
 /** The published package ID. {@link https://suiexplorer.com/object/0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090?network=testnet} */
 const PKG = '0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090';
@@ -95,6 +95,11 @@ program
   .argument('<type>', 'The type of the item to search for')
   .action(searchType);
 
+program
+  .command('withdraw')
+  .description('Withdraw all profits from the Kiosk')
+  .action(withdrawAll);
+
 program.parse(process.argv);
 
 /**
@@ -135,13 +140,18 @@ async function showContents({ id, address }) {
     kioskId = kioskCap.content.fields.for;
   }
 
-  const { data: { items, listings } } = await fetchKiosk(provider, kioskId, { limit: 1000 }, {
+  const { data: { items, listings, kiosk } } = await fetchKiosk(provider, kioskId, { limit: 1000 }, {
+    includeKioskFields: true,
     withListingPrices: true,
     includeItems: true,
   });
 
-  console.log('Kiosk ID: %s', kioskId);
-  console.log('Items:');
+  console.log('Description');
+  console.log('- Kiosk ID:    %s', kioskId);
+  console.log('- Sender is:   %s', kioskId);
+  console.log('- Profits:     %s', kiosk.profits);
+  console.log('- UID Exposed: %s', kiosk.allowExtensions);
+  console.log('- Item Count:  %s', kiosk.itemCount);
   console.table(items.map((item) => ({
     objectId: item.data.objectId,
     type: formatType(item.data.type),
@@ -304,6 +314,27 @@ async function searchType(type) {
     price: e.parsedJson.price,
     // type: formatType(e.type),
   })));
+}
+
+/**
+ * Command: `withdraw`
+ * Description: Withdraws funds from the Kiosk and send them to sender.
+ */
+async function withdrawAll() {
+  const sender = await signer.getAddress();
+  const kioskCap = await findKioskCap(sender).catch(() => null);
+  if (kioskCap === null) {
+    throw new Error('No Kiosk found for sender');
+  }
+
+  const kioskId = kioskCap.content.fields.for;
+  const txb = new TransactionBlock();
+  const kioskArg = txb.object(kioskId);
+  const capArg = txb.objectRef({ ...kioskCap });
+  const coin = withdrawFromKiosk(txb, kioskArg, capArg, null);
+
+  txb.transferObjects([coin], txb.pure(sender, 'address'));
+  return sendTx(txb);
 }
 
 /**
