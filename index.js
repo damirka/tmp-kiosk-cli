@@ -137,8 +137,11 @@ program
 program
   .command('purchase')
   .description('purchase an item from the specified Kiosk')
-  .argument('<kiosk ID>', 'The ID of the Kiosk to purchase from')
   .argument('<item ID>', 'The ID of the item to purchase')
+  .option(
+    '--kiosk <ID>',
+    'The ID of the Kiosk to purchase from (speeds up purchase by skipping search)',
+  )
   .option(
     '-t, --target ["kiosk" | <address>]',
     'Purchase destination: "kiosk" for user Kiosk or \ncustom address (defaults to sender)',
@@ -271,7 +274,8 @@ async function showKioskContents({ id, address }) {
       objectId: item.data.objectId,
       type: formatType(item.data.type),
       listed: listings.some((l) => l.itemId == item.data.objectId),
-      ['price (SUI)']: formatAmount(listings.find((l) => l.itemId == item.data.objectId)?.price) || 'N/A',
+      ['price (SUI)']:
+        formatAmount(listings.find((l) => l.itemId == item.data.objectId)?.price) || 'N/A',
     }))
     .sort((a, b) => a.listed - b.listed);
 
@@ -487,8 +491,8 @@ async function delistItem(itemId) {
  * TODO:
  * - add destination "kiosk" or "user" (kiosk by default)
  */
-async function purchaseItem(kioskId, itemId, opts) {
-  const { target } = opts;
+async function purchaseItem(itemId, opts) {
+  const { target, kiosk: inputKioskId } = opts;
 
   if (target && target !== 'kiosk' && !isValidSuiAddress(target)) {
     throw new Error(
@@ -497,15 +501,44 @@ async function purchaseItem(kioskId, itemId, opts) {
     );
   }
 
+  if (inputKioskId && !isValidSuiObjectId(inputKioskId)) {
+    throw new Error('Invalid Kiosk ID: "%s"', inputKioskId);
+  }
+
   if (!isValidSuiObjectId(itemId)) {
     throw new Error('Invalid Item ID: "%s"', itemId);
   }
 
-  if (!isValidSuiObjectId(kioskId)) {
-    throw new Error('Invalid Kiosk ID: "%s"', kioskId);
+  let kioskId = inputKioskId;
+
+  const itemInfo = await provider.getObject({
+    id: itemId,
+    options: { showType: true, showOwner: true },
+  });
+
+  if ('error' in itemInfo || !itemInfo.data) {
+    throw new Error(`Item ${itemId} not found; ${itemInfo.error}`);
   }
 
-  const itemInfo = await provider.getObject({ id: itemId, options: { showType: true } });
+  if (!('ObjectOwner' in itemInfo.data.owner)) {
+    throw new Error(`Item ${itemId} is not owned by an object`);
+  }
+
+  if (!kioskId) {
+    const itemKeyId = itemInfo.data.owner.ObjectOwner;
+    const itemKey = await provider.getObject({ id: itemKeyId, options: { showOwner: true } });
+
+    if ('error' in itemKey || !itemKey.data) {
+      throw new Error(`Dynamic Field ${itemId} key not found; ${itemKey.error}`);
+    }
+
+    if (!('ObjectOwner' in itemKey.data.owner)) {
+      throw new Error(`Dynamic Field ${itemId} key is not owned by an object`);
+    }
+
+    kioskId = itemKey.data.owner.ObjectOwner;
+  }
+
   const [kiosk, policies, listing] = await Promise.all([
     provider.getObject({ id: kioskId, options: { showOwner: true } }),
     queryTransferPolicy(provider, itemInfo.data.type),
@@ -615,7 +648,7 @@ async function searchType(type) {
   console.table(
     listings.map((e) => ({
       objectId: e.parsedJson.id,
-      kiosk: e.parsedJson.kiosk,
+      kiosk: formatAddress(e.parsedJson.kiosk),
       price: e.parsedJson.price,
     })),
   );
