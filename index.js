@@ -22,6 +22,7 @@ const {
   formatAddress,
   isValidSuiAddress,
   isValidSuiObjectId,
+  normalizeStructTag
 } = require('@mysten/sui.js');
 const { program } = require('commander');
 const {
@@ -33,6 +34,7 @@ const {
   delist,
   withdrawFromKiosk,
   take,
+  lock,
 } = require('@mysten/kiosk');
 
 /** The published package ID. {@link https://suiexplorer.com/object/0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090?network=testnet} */
@@ -79,11 +81,31 @@ program
   .action(newKiosk);
 
 program
+  .command('inventory')
+  .description('view the inventory of the sender')
+  .option('-a, --address <address>', 'Fetch another user\'s inventory')
+  .option('--cursor', 'Fetch inventory starting from this cursor')
+  .option('--only-display', 'Only show items that have Display')
+  .action(showInventory);
+
+program
   .command('contents')
   .description('list all Items and Listings in the Kiosk owned by the sender')
   .option('-i, --id <id>', 'The ID of the Kiosk to look up')
   .option('-a, --address <address>', 'The address of the Kiosk owner')
-  .action(showContents);
+  .action(showKioskContents);
+
+program
+  .command('place')
+  .description('place an item from the sender\'s inventory into the Kiosk')
+  .argument('<item ID>', 'The ID of the item to place')
+  .action(placeItem);
+
+program
+  .command('lock')
+  .description('lock an item in the user Kiosk (requires TransferPolicy)')
+  .argument('<item ID>', 'The ID of the item to place')
+  .action(lockItem);
 
 program
   .command('take')
@@ -151,11 +173,49 @@ async function newKiosk() {
 }
 
 /**
+ * Command: `inventory`
+ * Description: view the inventory of the sender (or a specified address)
+ */
+async function showInventory({ address, onlyDisplay, cursor }) {
+  const owner = address || (await signer.getAddress());
+
+  if (!isValidSuiAddress(owner)) {
+    throw new Error(`Invalid SUI address: "${owner}"`);
+  }
+
+  const { data, nextCursor, hasNextPage } = await provider.getOwnedObjects({ owner, cursor, options: {
+    showType: true,
+    showDisplay: true,
+  }});
+
+  if (hasNextPage) {
+    console.log('Showing first page of results. Use `--cursor` to get the next page.');
+    console.log('Next cursor: %s', nextCursor);
+  }
+
+  const list = data
+    .filter(({ data, error }) => !error && data)
+    .sort((a, b) => a.data.type.localeCompare(b.data.type))
+    .map(({ data }) => ({
+      objectId: data.objectId,
+      type: formatType(data.type),
+      hasDisplay: !!data.display.data,
+    }));
+
+  console.log('- Owner %s', owner);
+  if (onlyDisplay) {
+    console.table(list.filter(({ hasDisplay }) => hasDisplay));
+  } else {
+    console.table(list);
+  }
+}
+
+/**
  * Command: `contents`
  * Description: Show the contents of the Kiosk owned by the sender (or the
  * specified address) or directly by the specified Kiosk ID
  */
-async function showContents({ id, address }) {
+async function showKioskContents({ id, address }) {
   let kioskId = null;
 
   if (id) {
@@ -201,6 +261,85 @@ async function showContents({ id, address }) {
       }))
       .sort((a, b) => a.listed - b.listed),
   );
+}
+
+/**
+ * Command: `place`
+ * Description: Place an item into the Kiosk owned by the sender
+ */
+async function placeItem(itemId) {
+  const kioskCap = await findKioskCap().catch(() => null);
+  const owner = await signer.getAddress();
+
+  if (kioskCap === null) {
+    throw new Error('No Kiosk found for sender; use `new` to create one');
+  }
+
+  if (!isValidSuiObjectId(itemId)) {
+    throw new Error('Invalid Item ID: "%s"', itemId);
+  }
+
+  const item = await provider.getObject({ id: itemId, options: { showType: true, showOwner: true }});
+
+  if ('error' in item || !item.data) {
+    throw new Error(`Item ${itemId} not found; error: ` + item.error);
+  }
+
+  if (!('AddressOwner' in item.data.owner) || item.data.owner.AddressOwner !== owner) {
+    throw new Error(`Item ${itemId} is not owned by ${owner}; use \`inventory\` to see your items`);
+  }
+
+  const txb = new TransactionBlock();
+  const capArg = txb.objectRef({ ...kioskCap });
+  const itemArg = txb.objectRef({ ...item.data });
+  const kioskArg = txb.object(kioskCap.content.fields.for);
+
+  place(txb, item.data.type, kioskArg, capArg, itemArg);
+
+  return sendTx(txb);
+}
+
+/**
+ * Command: `lock`
+ * Description: Lock an item in the Kiosk owned by the sender (requires TransferPolicy)
+ */
+async function lockItem(itemId) {
+  const kioskCap = await findKioskCap().catch(() => null);
+  const owner = await signer.getAddress();
+
+  if (kioskCap === null) {
+    throw new Error('No Kiosk found for sender; use `new` to create one');
+  }
+
+  if (!isValidSuiObjectId(itemId)) {
+    throw new Error('Invalid Item ID: "%s"', itemId);
+  }
+
+  const item = await provider.getObject({ id: itemId, options: { showType: true, showOwner: true }});
+
+  if ('error' in item || !item.data) {
+    throw new Error(`Item ${itemId} not found; error: ` + item.error);
+  }
+
+  if (!('AddressOwner' in item.data.owner) || item.data.owner.AddressOwner !== owner) {
+    throw new Error(`Item ${itemId} is not owned by ${owner}; use \`inventory\` to see your items`);
+  }
+
+  const [ policy ] = await queryTransferPolicy(provider, item.data.type);
+
+  if (!policy) {
+    throw new Error(`Item ${itemId} with type ${item.data.type} does not have a TransferPolicy`);
+  }
+
+  const txb = new TransactionBlock();
+  const capArg = txb.objectRef({ ...kioskCap });
+  const itemArg = txb.objectRef({ ...item.data });
+  const policyArg = txb.object(policy.id);
+  const kioskArg = txb.object(kioskCap.content.fields.for);
+
+  lock(txb, item.data.type, kioskArg, capArg, policyArg, itemArg);
+
+  return sendTx(txb);
 }
 
 /**
@@ -549,8 +688,8 @@ function formatType(type) {
   let [pre, post] = type.split('<');
   let parts = pre.split('::');
   return !!post
-    ? [formatAddress(parts[0]), parts[1], parts[2]].join('::') + '<' + formatType(post)
-    : [formatAddress(parts[0]), parts[1]].join('::');
+    ? [parts[0] !== '0x2' && formatAddress(parts[0]) || parts[0], parts[1], parts[2]].join('::') + '<' + formatType(post)
+    : [parts[0] !== '0x2' && formatAddress(parts[0]) || parts[0], parts[1], parts[2]].join('::');
 }
 
 process.on('uncaughtException', (err) => {
