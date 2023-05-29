@@ -25,7 +25,6 @@ import {
   MIST_PER_SUI,
 } from '@mysten/sui.js';
 import { program } from 'commander';
-import inquirer from 'inquirer';
 import {
   createKioskAndShare,
   fetchKiosk,
@@ -272,7 +271,7 @@ async function showKioskContents({ id, address }) {
       objectId: item.data.objectId,
       type: formatType(item.data.type),
       listed: listings.some((l) => l.itemId == item.data.objectId),
-      price: listings.find((l) => l.itemId == item.data.objectId)?.price || 'N/A',
+      ['price (SUI)']: formatAmount(listings.find((l) => l.itemId == item.data.objectId)?.price) || 'N/A',
     }))
     .sort((a, b) => a.listed - b.listed);
 
@@ -734,22 +733,22 @@ function formatType(type) {
  * Formats the MIST into SUI.
  */
 function formatAmount(amount) {
+  if (!amount) {
+    return null;
+  }
+
   if (amount <= MIST_PER_SUI) {
     return Number(amount) / Number(MIST_PER_SUI);
   }
 
-  if (amount > MIST_PER_SUI) {
-    let lhs = amount - (amount - MIST_PER_SUI);
-    let rhs = amount - lhs;
+  let len = amount.toString().length;
+  let lhs = amount.toString().slice(0, len - 9);
+  let rhs = amount.toString().slice(-9);
 
-    console.log(lhs, rhs);
-  }
-
-  return null;
+  return Number(`${lhs}.${rhs}`);
 }
 
-12130000 -
-  process.on('uncaughtException', (err) => {
-    console.error(err.message);
-    process.exit(1);
-  });
+process.on('uncaughtException', (err) => {
+  console.error(err.message);
+  process.exit(1);
+});
