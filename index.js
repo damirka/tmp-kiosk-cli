@@ -13,7 +13,7 @@
  * Gas logging for every operation!
  */
 
-const {
+import {
   RawSigner,
   testnetConnection,
   Ed25519Keypair,
@@ -22,10 +22,11 @@ const {
   formatAddress,
   isValidSuiAddress,
   isValidSuiObjectId,
-  normalizeStructTag
-} = require('@mysten/sui.js');
-const { program } = require('commander');
-const {
+  MIST_PER_SUI,
+} from '@mysten/sui.js';
+import { program } from 'commander';
+import inquirer from 'inquirer';
+import {
   createKioskAndShare,
   fetchKiosk,
   place,
@@ -35,7 +36,7 @@ const {
   withdrawFromKiosk,
   take,
   lock,
-} = require('@mysten/kiosk');
+} from '@mysten/kiosk';
 
 /** The published package ID. {@link https://suiexplorer.com/object/0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090?network=testnet} */
 const PKG = '0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090';
@@ -48,10 +49,10 @@ const MINT_FUNC = `${PKG}::test::mint`;
  * List of known types for shorthand search in the `search` command.
  */
 const KNOWN_TYPES = {
-  suifrens: '0x80d7de9c4a56194087e0ba0bf59492aa8e6a5ee881606226930827085ddf2332::suifrens::SuiFren<0x80d7de9c4a56194087e0ba0bf59492aa8e6a5ee881606226930827085ddf2332::capy::Capy>',
-  test: ITEM_TYPE
+  suifren:
+    '0x80d7de9c4a56194087e0ba0bf59492aa8e6a5ee881606226930827085ddf2332::suifrens::SuiFren<0x80d7de9c4a56194087e0ba0bf59492aa8e6a5ee881606226930827085ddf2332::capy::Capy>',
+  test: ITEM_TYPE,
 };
-
 
 /** JsonRpcProvider for the Testnet */
 const provider = new JsonRpcProvider(testnetConnection);
@@ -72,7 +73,9 @@ const signer = (function (mnemonic) {
 
 program
   .name('kiosk-cli')
-  .description('Simple CLI to interact with Kiosk smart contracts. \nRequires MNEMONIC environment variable.')
+  .description(
+    'Simple CLI to interact with Kiosk smart contracts. \nRequires MNEMONIC environment variable.',
+  )
   .version('0.0.1');
 
 program
@@ -83,7 +86,7 @@ program
 program
   .command('inventory')
   .description('view the inventory of the sender')
-  .option('-a, --address <address>', 'Fetch another user\'s inventory')
+  .option('-a, --address <address>', "Fetch another user's inventory")
   .option('--cursor', 'Fetch inventory starting from this cursor')
   .option('--only-display', 'Only show items that have Display')
   .action(showInventory);
@@ -91,13 +94,13 @@ program
 program
   .command('contents')
   .description('list all Items and Listings in the Kiosk owned by the sender')
-  .option('-i, --id <id>', 'The ID of the Kiosk to look up')
-  .option('-a, --address <address>', 'The address of the Kiosk owner')
+  .option('--id <id>', 'The ID of the Kiosk to look up')
+  .option('--address <address>', 'The address of the Kiosk owner')
   .action(showKioskContents);
 
 program
   .command('place')
-  .description('place an item from the sender\'s inventory into the Kiosk')
+  .description("place an item from the sender's inventory into the Kiosk")
   .argument('<item ID>', 'The ID of the item to place')
   .action(placeItem);
 
@@ -137,13 +140,16 @@ program
   .description('purchase an item from the specified Kiosk')
   .argument('<kiosk ID>', 'The ID of the Kiosk to purchase from')
   .argument('<item ID>', 'The ID of the item to purchase')
-  .option('-t, --target ["kiosk" | <address>]', 'Purchase destination: "kiosk" for user Kiosk or \ncustom address (defaults to sender)')
+  .option(
+    '-t, --target ["kiosk" | <address>]',
+    'Purchase destination: "kiosk" for user Kiosk or \ncustom address (defaults to sender)',
+  )
   .action(purchaseItem);
 
 program
   .command('search')
   .description('search open listings in Kiosks')
-  .argument('<type>', 'The type of the item to search for. \nAvailable aliases: "suifrens", "test"')
+  .argument('<type>', 'The type of the item to search for. \nAvailable aliases: "suifren", "test"')
   .action(searchType);
 
 program
@@ -183,10 +189,14 @@ async function showInventory({ address, onlyDisplay, cursor }) {
     throw new Error(`Invalid SUI address: "${owner}"`);
   }
 
-  const { data, nextCursor, hasNextPage } = await provider.getOwnedObjects({ owner, cursor, options: {
-    showType: true,
-    showDisplay: true,
-  }});
+  const { data, nextCursor, hasNextPage } = await provider.getOwnedObjects({
+    owner,
+    cursor,
+    options: {
+      showType: true,
+      showDisplay: true,
+    },
+  });
 
   if (hasNextPage) {
     console.log('Showing first page of results. Use `--cursor` to get the next page.');
@@ -226,6 +236,11 @@ async function showKioskContents({ id, address }) {
     kioskId = id;
   } else {
     const sender = address || (await signer.getAddress());
+
+    if (!isValidSuiAddress(sender)) {
+      throw new Error(`Invalid SUI address: "${sender}"`);
+    }
+
     const kioskCap = await findKioskCap(sender).catch(() => null);
     if (kioskCap == null) {
       throw new Error(`No Kiosk found for ${sender}`);
@@ -251,16 +266,17 @@ async function showKioskContents({ id, address }) {
   console.log('- Profits:     %s', kiosk.profits);
   console.log('- UID Exposed: %s', kiosk.allowExtensions);
   console.log('- Item Count:  %s', kiosk.itemCount);
-  console.table(
-    items
-      .map((item) => ({
-        objectId: item.data.objectId,
-        type: formatType(item.data.type),
-        listed: listings.some((l) => l.itemId == item.data.objectId),
-        price: listings.find((l) => l.itemId == item.data.objectId)?.price || 'N/A',
-      }))
-      .sort((a, b) => a.listed - b.listed),
-  );
+
+  const tabledItems = items
+    .map((item) => ({
+      objectId: item.data.objectId,
+      type: formatType(item.data.type),
+      listed: listings.some((l) => l.itemId == item.data.objectId),
+      price: listings.find((l) => l.itemId == item.data.objectId)?.price || 'N/A',
+    }))
+    .sort((a, b) => a.listed - b.listed);
+
+  console.table(tabledItems);
 }
 
 /**
@@ -279,7 +295,10 @@ async function placeItem(itemId) {
     throw new Error('Invalid Item ID: "%s"', itemId);
   }
 
-  const item = await provider.getObject({ id: itemId, options: { showType: true, showOwner: true }});
+  const item = await provider.getObject({
+    id: itemId,
+    options: { showType: true, showOwner: true },
+  });
 
   if ('error' in item || !item.data) {
     throw new Error(`Item ${itemId} not found; error: ` + item.error);
@@ -315,7 +334,10 @@ async function lockItem(itemId) {
     throw new Error('Invalid Item ID: "%s"', itemId);
   }
 
-  const item = await provider.getObject({ id: itemId, options: { showType: true, showOwner: true }});
+  const item = await provider.getObject({
+    id: itemId,
+    options: { showType: true, showOwner: true },
+  });
 
   if ('error' in item || !item.data) {
     throw new Error(`Item ${itemId} not found; error: ` + item.error);
@@ -325,7 +347,7 @@ async function lockItem(itemId) {
     throw new Error(`Item ${itemId} is not owned by ${owner}; use \`inventory\` to see your items`);
   }
 
-  const [ policy ] = await queryTransferPolicy(provider, item.data.type);
+  const [policy] = await queryTransferPolicy(provider, item.data.type);
 
   if (!policy) {
     throw new Error(`Item ${itemId} with type ${item.data.type} does not have a TransferPolicy`);
@@ -363,7 +385,7 @@ async function takeItem(itemId, { address }) {
     throw new Error('No Kiosk found for sender; use `new` to create one');
   }
 
-  const item = await provider.getObject({ id: itemId, options: { showType: true }});
+  const item = await provider.getObject({ id: itemId, options: { showType: true } });
 
   if ('error' in item || !item.data) {
     throw new Error(`Item ${itemId} not found; error: ` + item.error);
@@ -416,7 +438,7 @@ async function listItem(itemId, amount) {
     throw new Error('Invalid Item ID: "%s"', itemId);
   }
 
-  const item = await provider.getObject({ id: itemId, options: { showType: true }});
+  const item = await provider.getObject({ id: itemId, options: { showType: true } });
 
   if ('error' in item || !item.data) {
     throw new Error(`Item ${itemId} not found; error: ` + item.error);
@@ -445,7 +467,7 @@ async function delistItem(itemId) {
     throw new Error('Invalid Item ID: "%s"', itemId);
   }
 
-  const item = await provider.getObject({ id: itemId, options: { showType: true }});
+  const item = await provider.getObject({ id: itemId, options: { showType: true } });
 
   if ('error' in item || !item.data) {
     throw new Error(`Item ${itemId} not found; error: ` + item.error);
@@ -470,7 +492,10 @@ async function purchaseItem(kioskId, itemId, opts) {
   const { target } = opts;
 
   if (target && target !== 'kiosk' && !isValidSuiAddress(target)) {
-    throw new Error('Invalid target address: "%s"; use "kiosk" if you want to store in your Kiosk', target);
+    throw new Error(
+      'Invalid target address: "%s"; use "kiosk" if you want to store in your Kiosk',
+      target,
+    );
   }
 
   if (!isValidSuiObjectId(itemId)) {
@@ -533,7 +558,9 @@ async function purchaseItem(kioskId, itemId, opts) {
   if (target === 'kiosk') {
     const kioskCap = await findKioskCap().catch(() => null);
     if (kioskCap === null) {
-      throw new Error('No Kiosk found for sender; use `new` to create one; cannot place item to Kiosk');
+      throw new Error(
+        'No Kiosk found for sender; use `new` to create one; cannot place item to Kiosk',
+      );
     }
 
     const kioskArg = txb.object(kioskCap.content.fields.for);
@@ -677,7 +704,11 @@ async function sendTx(txb) {
       console.log('Storage cost:              %s', gas.storageCost);
       console.log('Storage rebate:            %s', gas.storageRebate);
       console.log('NonRefundable Storage Fee: %s', gas.nonRefundableStorageFee);
-      console.log('Total Gas:                 %s', total.toString());
+      console.log(
+        'Total Gas:                 %s SUI (%s MIST)',
+        formatAmount(total),
+        total.toString(),
+      );
     });
 }
 
@@ -685,14 +716,40 @@ async function sendTx(txb) {
  * Shortens the type (currently, a little messy).
  */
 function formatType(type) {
+  let knownIdx = Object.values(KNOWN_TYPES).indexOf(type);
+  if (knownIdx !== -1) {
+    return Object.keys(KNOWN_TYPES)[knownIdx];
+  }
+
   let [pre, post] = type.split('<');
   let parts = pre.split('::');
   return !!post
-    ? [parts[0] !== '0x2' && formatAddress(parts[0]) || parts[0], parts[1], parts[2]].join('::') + '<' + formatType(post)
-    : [parts[0] !== '0x2' && formatAddress(parts[0]) || parts[0], parts[1], parts[2]].join('::');
+    ? [(parts[0] !== '0x2' && formatAddress(parts[0])) || parts[0], parts[1], parts[2]].join('::') +
+        '<' +
+        formatType(post)
+    : [(parts[0] !== '0x2' && formatAddress(parts[0])) || parts[0], parts[1], parts[2]].join('::');
 }
 
-process.on('uncaughtException', (err) => {
-  console.error(err.message);
-  process.exit(1);
-});
+/**
+ * Formats the MIST into SUI.
+ */
+function formatAmount(amount) {
+  if (amount <= MIST_PER_SUI) {
+    return Number(amount) / Number(MIST_PER_SUI);
+  }
+
+  if (amount > MIST_PER_SUI) {
+    let lhs = amount - (amount - MIST_PER_SUI);
+    let rhs = amount - lhs;
+
+    console.log(lhs, rhs);
+  }
+
+  return null;
+}
+
+12130000 -
+  process.on('uncaughtException', (err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
