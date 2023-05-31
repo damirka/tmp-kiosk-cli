@@ -88,6 +88,7 @@ program
   .option('-a, --address <address>', "Fetch another user's inventory")
   .option('--cursor', 'Fetch inventory starting from this cursor')
   .option('--only-display', 'Only show items that have Display')
+  .option('-f, --filter <type>', 'Filter by type')
   .action(showInventory);
 
 program
@@ -155,6 +156,12 @@ program
   .action(searchType);
 
 program
+  .command('policy')
+  .description('search for a TransferPolicy for the specified type')
+  .argument('<type>', 'The type of the item to search for. \nAvailable aliases: "suifren", "test"')
+  .action(searchPolicy);
+
+program
   .command('withdraw')
   .description('Withdraw all profits from the Kiosk to the Kiosk Owner')
   .action(withdrawAll);
@@ -184,21 +191,26 @@ async function newKiosk() {
  * Command: `inventory`
  * Description: view the inventory of the sender (or a specified address)
  */
-async function showInventory({ address, onlyDisplay, cursor }) {
+async function showInventory({ address, onlyDisplay, cursor, filter }) {
   const owner = address || (await signer.getAddress());
 
   if (!isValidSuiAddress(owner)) {
     throw new Error(`Invalid SUI address: "${owner}"`);
   }
 
-  const { data, nextCursor, hasNextPage } = await provider.getOwnedObjects({
-    owner,
-    cursor,
+  const options = {
+    owner, cursor,
     options: {
       showType: true,
       showDisplay: true,
     },
-  });
+  };
+
+  if (filter) {
+    options.filter = { StructType: KNOWN_TYPES[filter] || filter };
+  }
+
+  const { data, nextCursor, hasNextPage } = await provider.getOwnedObjects(options);
 
   if (hasNextPage) {
     console.log('Showing first page of results. Use `--cursor` to get the next page.');
@@ -654,6 +666,26 @@ async function searchType(type) {
   );
 }
 
+async function searchPolicy(type) {
+  // use known types if available;
+  type = KNOWN_TYPES[type] || type;
+
+  const policies = await queryTransferPolicy(provider, type);
+
+  if (policies.length === 0) {
+    console.log(`No transfer policy found for type ${type}`);
+    process.exit(0);
+  }
+
+  console.log('- Type: %s', formatType(type));
+  console.table(policies.map((policy) => ({
+    id: policy.id,
+    owner: 'Shared' in policy.owner ? 'Shared' : 'Owned',
+    rules: policy.rules,
+    balance: policy.balance
+  })));
+}
+
 /**
  * Command: `withdraw`
  * Description: Withdraws funds from the Kiosk and send them to sender.
@@ -753,13 +785,13 @@ function formatType(type) {
     return Object.keys(KNOWN_TYPES)[knownIdx];
   }
 
-  let [pre, post] = type.split('<');
-  let parts = pre.split('::');
-  return !!post
-    ? [(parts[0] !== '0x2' && formatAddress(parts[0])) || parts[0], parts[1], parts[2]].join('::') +
-        '<' +
-        formatType(post)
-    : [(parts[0] !== '0x2' && formatAddress(parts[0])) || parts[0], parts[1], parts[2]].join('::');
+  while (type.includes('0x')) {
+    let pos = type.indexOf('0x');
+    let addr = formatAddress(type.slice(pos, pos + 66)).replace('0x', '');
+    type = type.replace(type.slice(pos, pos + 66), addr);
+  }
+
+  return type;
 }
 
 /**
