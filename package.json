@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "private": true,
   "type": "module",
   "scripts": {
     "cli": "node index.js",
@@ -18,7 +19,7 @@
     "trailingComma": "all"
   },
   "dependencies": {
-    "@mysten/kiosk": "0.0.0-experimental-20230525185817",
+    "@mysten/kiosk": "0.2.0",
     "@mysten/sui.js": "^0.35.0",
     "commander": "^10.0.1"
   }

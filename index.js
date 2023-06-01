@@ -1,16 +1,30 @@
+// Copyright (c) Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 /**
- * This script uses the `test.move` module to mint an NFT (TransferPolicy is
- * already created and published).
+ * Implements a `kiosk-cli`. To view available commands, run:
+ * ```sh
+ * $ node index.js help
+ * ```
  *
- * TODO:
+ * Alternatively, via the `pnpm`:
+ * ```sh
+ * pnpm cli help
+ * ```
  *
- * - transfer from Kiosk
- * - locking in the Kiosk
- * - purchase to sender (if not locked)
- * - place into Kiosk (from inventory)
- * - take to sender
+ * This package allows for:
+ * - Creating a Kiosk;
+ * - Placing items into the Kiosk;
+ * - Listing items in the Kiosk for sale;
+ * - Purchasing items from the Kiosk;
+ * - Taking items from the Kiosk;
+ * - Locking items in the Kiosk;
+ * - Delisting items from the Kiosk;
+ * - Viewing the inventory of the sender;
+ * - Viewing the contents of a Kiosk;
  *
- * Gas logging for every operation!
+ * For testing purposes, in `testnet` env, the `mint-to-kiosk` command is
+ * available to get a test item into the user Kiosk.
  */
 
 import {
@@ -23,6 +37,7 @@ import {
   isValidSuiAddress,
   isValidSuiObjectId,
   MIST_PER_SUI,
+  bcs,
 } from '@mysten/sui.js';
 import { program } from 'commander';
 import {
@@ -35,6 +50,7 @@ import {
   withdrawFromKiosk,
   take,
   lock,
+  purchaseAndResolvePolicies,
 } from '@mysten/kiosk';
 
 /** The published package ID. {@link https://suiexplorer.com/object/0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090?network=testnet} */
@@ -166,6 +182,11 @@ program
   .description('Withdraw all profits from the Kiosk to the Kiosk Owner')
   .action(withdrawAll);
 
+program
+  .command('publisher')
+  .description('View the Publisher objects owned by the user')
+  .action(showPublisher);
+
 program.parse(process.argv);
 
 /**
@@ -182,7 +203,7 @@ async function newKiosk() {
 
   const txb = new TransactionBlock();
   const cap = createKioskAndShare(txb);
-  txb.transferObjects([cap], txb.pure(sender));
+  txb.transferObjects([cap], txb.pure(sender, 'address'));
 
   return sendTx(txb);
 }
@@ -199,7 +220,8 @@ async function showInventory({ address, onlyDisplay, cursor, filter }) {
   }
 
   const options = {
-    owner, cursor,
+    owner,
+    cursor,
     options: {
       showType: true,
       showDisplay: true,
@@ -263,17 +285,22 @@ async function showKioskContents({ id, address }) {
   }
 
   const {
-    data: { items, listings, kiosk },
+    data: { items, kiosk },
+    hasNextPage,
+    nextCursor,
   } = await fetchKiosk(
     provider,
     kioskId,
     { limit: 1000 },
     {
-      includeKioskFields: true,
       withListingPrices: true,
-      includeItems: true,
+      withKioskFields: true,
     },
   );
+
+  if (hasNextPage) {
+    console.log('Next cursor:   %s', nextCursor);
+  }
 
   console.log('Description');
   console.log('- Kiosk ID:    %s', kioskId);
@@ -283,11 +310,12 @@ async function showKioskContents({ id, address }) {
 
   const tabledItems = items
     .map((item) => ({
-      objectId: item.data.objectId,
-      type: formatType(item.data.type),
-      listed: listings.some((l) => l.itemId == item.data.objectId),
-      ['price (SUI)']:
-        formatAmount(listings.find((l) => l.itemId == item.data.objectId)?.price) || 'N/A',
+      objectId: item.objectId,
+      type: formatType(item.type),
+      isLocked: item.isLocked,
+      listed: !!item.listing,
+      isPublic: (item.listing && !item.listing.isExclusive) || false,
+      ['price (SUI)']: item.listing ? formatAmount(item.listing.price) : 'N/A',
     }))
     .sort((a, b) => a.listed - b.listed);
 
@@ -432,7 +460,6 @@ async function mintToKiosk() {
   const kioskArg = txb.object(kioskCap.content.fields.for);
   const capArg = txb.objectRef({ ...kioskCap });
   const nft = txb.moveCall({ target: MINT_FUNC });
-
   place(txb, ITEM_TYPE, kioskArg, capArg, nft);
 
   return sendTx(txb);
@@ -578,26 +605,19 @@ async function purchaseItem(itemId, opts) {
 
   const price = listing.data.content.fields.value;
   const txb = new TransactionBlock();
-  const kioskArg = txb.sharedObjectRef({
-    mutable: true,
-    objectId: kioskId,
-    initialSharedVersion: kiosk.data.owner.Shared.initial_shared_version,
-  });
+  const item = purchaseAndResolvePolicies(
+    txb,
+    itemInfo.data.type,
+    { price },
+    kioskId,
+    itemInfo.data.objectId,
+    policies[0],
+  );
 
-  const policyArg = txb.object(policies[0].id);
-  const payment = txb.splitCoins(txb.gas, [txb.pure(price, 'u64')]);
-  const idArg = txb.pure(itemId, 'address');
-  const [item, req] = txb.moveCall({
-    target: `0x2::kiosk::purchase`,
-    typeArguments: [itemInfo.data.type],
-    arguments: [kioskArg, idArg, payment],
-  });
-
-  txb.moveCall({
-    target: `0x2::transfer_policy::confirm_request`,
-    typeArguments: [itemInfo.data.type],
-    arguments: [policyArg, req],
-  });
+  // For the locking policy scenario when an item needs to be locked;
+  if (item === null) {
+    return sendTx(txb);
+  }
 
   if (target === 'kiosk') {
     const kioskCap = await findKioskCap().catch(() => null);
@@ -678,12 +698,14 @@ async function searchPolicy(type) {
   }
 
   console.log('- Type: %s', formatType(type));
-  console.table(policies.map((policy) => ({
-    id: policy.id,
-    owner: 'Shared' in policy.owner ? 'Shared' : 'Owned',
-    rules: policy.rules,
-    balance: policy.balance
-  })));
+  console.table(
+    policies.map((policy) => ({
+      id: policy.id,
+      owner: 'Shared' in policy.owner ? 'Shared' : 'Owned',
+      rules: policy.rules.map((rule) => rule.split('::').slice(1).join('::')),
+      balance: policy.balance,
+    })),
+  );
 }
 
 /**
@@ -705,6 +727,41 @@ async function withdrawAll() {
 
   txb.transferObjects([coin], txb.pure(sender, 'address'));
   return sendTx(txb);
+}
+
+/**
+ * Command: `publisher`
+ * Description: Shows the Publisher objects of the current user.
+ */
+async function showPublisher() {
+  const sender = await signer.getAddress();
+  const result = await provider.getOwnedObjects({
+    owner: sender,
+    filter: { StructType: '0x2::package::Publisher' },
+    options: { showBcs: true },
+  });
+
+  if ('error' in result || !result.data) {
+    throw new Error(`Error fetching Publisher result: ${result.error}`);
+  }
+
+  if (result.data && result.data.length === 0) {
+    return console.log('No Publisher objects found for sender');
+  }
+
+  console.table(
+    result.data.map((o) =>
+      bcs.de(
+        {
+          id: 'address',
+          package: 'string',
+          module_name: 'string',
+        },
+        o.data.bcs.bcsBytes,
+        'base64',
+      ),
+    ),
+  );
 }
 
 /**

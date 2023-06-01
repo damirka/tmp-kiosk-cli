@@ -1,5 +1,5 @@
 [package]
-name = "test_kiosk_policies"
+name = "Kiosk CLI"
 version = "0.0.1"
 published-at = "0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090"
 
@@ -7,5 +7,5 @@ published-at = "0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd319544290
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "testnet" }
 
 [addresses]
-test =  "0x52852c4ba80040395b259c641e70b702426a58990ff73cecf5afd31954429090"
+test =  "0x0"
 sui =  "0000000000000000000000000000000000000000000000000000000000000002"

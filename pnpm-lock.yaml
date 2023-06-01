@@ -2,8 +2,8 @@ lockfileVersion: '6.0'
 
 dependencies:
   '@mysten/kiosk':
-    specifier: 0.0.0-experimental-20230525185817
-    version: 0.0.0-experimental-20230525185817
+    specifier: 0.2.0
+    version: 0.2.0
   '@mysten/sui.js':
     specifier: ^0.35.0
     version: 0.35.0
@@ -19,30 +19,11 @@ packages:
       bs58: 5.0.0
     dev: false
 
-  /@mysten/kiosk@0.0.0-experimental-20230525185817:
-    resolution: {integrity: sha512-egN/MQH7VLVmnabxdVfpZvJZGj7Kz+VBDydAdbQfjPAvkhnxS8YH97i1GWqF6OEoUF4rbW4V7KU5s1ke8QFQ5Q==}
+  /@mysten/kiosk@0.2.0:
+    resolution: {integrity: sha512-N9MfVyVEkQKAxVFuitrBdJZfV1hSWc0F7LjFafDJRdTw4aJfFzND6zSoqzV5N3M2j2PERrOT2kmKkpg+gwycqQ==}
     engines: {node: '>=16'}
     dependencies:
-      '@mysten/sui.js': 0.0.0-experimental-20230525185817
-    transitivePeerDependencies:
-      - bufferutil
-      - encoding
-      - utf-8-validate
-    dev: false
-
-  /@mysten/sui.js@0.0.0-experimental-20230525185817:
-    resolution: {integrity: sha512-JYH3GpIzs/alcYYXpuLpp/upAGe/q91QQFJxdNgFtto0Aeypt6gjuDL933MpwkcAS1tbsVKvWhfJNDJYxofUWw==}
-    engines: {node: '>=16'}
-    dependencies:
-      '@mysten/bcs': 0.7.1
-      '@noble/curves': 1.0.0
-      '@noble/hashes': 1.3.0
-      '@open-rpc/client-js': 1.8.1
-      '@scure/bip32': 1.3.0
-      '@scure/bip39': 1.2.0
-      '@suchipi/femver': 1.0.0
-      superstruct: 1.0.3
-      tweetnacl: 1.0.3
+      '@mysten/sui.js': 0.35.0
     transitivePeerDependencies:
       - bufferutil
       - encoding
